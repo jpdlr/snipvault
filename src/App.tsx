@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { filterSnippets, parseTags } from "./lib/snippets";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { filterSnippets, parseImportedSnippetsJson, parseTags } from "./lib/snippets";
+import { loadFilters, loadSnippets, saveFilters, saveSnippets } from "./lib/storage";
 import type { Snippet } from "./lib/types";
 import "./styles/app.css";
 
@@ -19,13 +20,15 @@ const initial: Snippet[] = [
 ];
 
 export default function App() {
-  const [snippets, setSnippets] = useState<Snippet[]>(initial);
-  const [query, setQuery] = useState("");
-  const [tagFilter, setTagFilter] = useState("all");
+  const [snippets, setSnippets] = useState<Snippet[]>(() => loadSnippets(initial));
+  const [query, setQuery] = useState(() => loadFilters().query);
+  const [tagFilter, setTagFilter] = useState(() => loadFilters().tagFilter);
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
   const [tags, setTags] = useState("");
   const [status, setStatus] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const tagsAvailable = useMemo(() => {
     return Array.from(new Set(snippets.flatMap((snippet) => snippet.tags))).sort((a, b) => a.localeCompare(b));
@@ -33,7 +36,15 @@ export default function App() {
 
   const visible = useMemo(() => filterSnippets(snippets, query, tagFilter), [snippets, query, tagFilter]);
 
-  const addSnippet = () => {
+  useEffect(() => {
+    saveSnippets(snippets);
+  }, [snippets]);
+
+  useEffect(() => {
+    saveFilters({ query, tagFilter });
+  }, [query, tagFilter]);
+
+  const addSnippet = useCallback(() => {
     if (!title.trim() || !code.trim()) {
       setStatus("Title and code are required.");
       return;
@@ -51,7 +62,30 @@ export default function App() {
     setCode("");
     setTags("");
     setStatus("Snippet added.");
-  };
+  }, [title, code, tags]);
+
+  const exportSnippets = useCallback(() => {
+    const blob = new Blob([JSON.stringify(snippets, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "snipvault-snippets.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus("Exported snippets to JSON.");
+  }, [snippets]);
+
+  const importSnippets = useCallback(async (file: File | null) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = parseImportedSnippetsJson(text);
+      setSnippets(parsed);
+      setStatus(`Imported ${parsed.length} snippets.`);
+    } catch (error) {
+      setStatus(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, []);
 
   const copySnippet = async (snippet: Snippet) => {
     try {
@@ -61,6 +95,30 @@ export default function App() {
       setStatus("Clipboard not available.");
     }
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        addSnippet();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "e") {
+        event.preventDefault();
+        exportSnippets();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [addSnippet, exportSnippets]);
 
   return (
     <div className="app">
@@ -80,13 +138,31 @@ export default function App() {
 
       <section className="panel filter">
         <h2>Filter</h2>
-        <input aria-label="Search snippets" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search snippets" />
+        <input
+          ref={searchRef}
+          aria-label="Search snippets"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search snippets"
+        />
         <select aria-label="Tag filter" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)}>
           <option value="all">All tags</option>
           {tagsAvailable.map((tag) => (
             <option key={tag} value={tag}>{tag}</option>
           ))}
         </select>
+        <div className="row">
+          <button type="button" onClick={exportSnippets}>Export JSON</button>
+          <button type="button" className="ghost" onClick={() => importInputRef.current?.click()}>Import JSON</button>
+          <button type="button" className="ghost" onClick={() => { setQuery(""); setTagFilter("all"); }}>Reset filters</button>
+          <input
+            ref={importInputRef}
+            className="hidden-input"
+            type="file"
+            accept=".json,application/json"
+            onChange={(event) => void importSnippets(event.target.files?.[0] ?? null)}
+          />
+        </div>
       </section>
 
       <section className="panel list">
@@ -105,6 +181,7 @@ export default function App() {
       </section>
 
       {status ? <p className="status">{status}</p> : null}
+      <p className="hint">Shortcuts: `Cmd/Ctrl+Enter` save, `Cmd/Ctrl+F` focus search, `Cmd/Ctrl+E` export.</p>
     </div>
   );
 }

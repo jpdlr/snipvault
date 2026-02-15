@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterSnippets, parseTags } from "../src/lib/snippets";
+import { filterSnippets, parseImportedSnippetsJson, parseTags } from "../src/lib/snippets";
 
 describe("snippet utilities", () => {
   it("parses tags cleanly", () => {
@@ -14,5 +14,13 @@ describe("snippet utilities", () => {
     const result = filterSnippets(items, "jwt", "auth");
     expect(result).toHaveLength(1);
     expect(result[0].title).toBe("Auth helper");
+  });
+
+  it("parses snippet JSON import", () => {
+    const parsed = parseImportedSnippetsJson(
+      JSON.stringify([{ id: "1", title: "Fetch", code: "await fetch()", tags: ["api"] }])
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].title).toBe("Fetch");
   });
 });

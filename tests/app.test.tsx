@@ -18,4 +18,13 @@ describe("SnipVault App", () => {
     expect(screen.getByText("Snippet added.")).toBeInTheDocument();
     expect(screen.getByText("Retry fetch")).toBeInTheDocument();
   });
+
+  it("supports keyboard shortcut save", () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Snippet title"), { target: { value: "Retry util" } });
+    fireEvent.change(screen.getByLabelText("Snippet code"), { target: { value: "retry(fn)" } });
+    fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+    expect(screen.getByText("Snippet added.")).toBeInTheDocument();
+    expect(screen.getByText("Retry util")).toBeInTheDocument();
+  });
 });
